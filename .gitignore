@@ -1,0 +1,7 @@
+# local notes for the next session (not part of the project)
+handoff.txt
+
+# build output / tooling
+build/
+.cache/
+*.pam

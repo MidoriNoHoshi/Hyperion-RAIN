@@ -63,6 +63,16 @@ struct overlay {
 	int frame;
 	double min_frame_interval; /* 0 = uncapped (monitor refresh) */
 
+	/* sound (sound.c) */
+	bool sound_on;
+	float volume;             /* 0..1 */
+	char sound_effect[64];    /* the effect's `#pragma sound` name, "" = none */
+	char sound_follow[64];    /* parameter loudness follows, "" = steady */
+	char sound_custom[4096];  /* a track the user picked, "" = the effect's */
+	char sound_playing[4096];
+	double sound_last;
+	void *mpv;
+
 	/* ipc / file watching */
 	int ipc_fd;
 	char ipc_path[108]; /* sizeof sockaddr_un.sun_path */
@@ -87,9 +97,22 @@ bool gl_init(struct overlay *ov, bool headless);
 void draw_frame(struct overlay *ov, int w, int h, double dt);
 void gl_finish(struct overlay *ov);
 bool shader_load(struct overlay *ov, const char *path);
+/* An effect name ("snow") or a path -> absolute path of an existing .frag. */
+const char *shader_resolve(const char *name, char *buf);
+/* Calls fn(name, path) for every effect found in the shader directories. */
+void shader_list(void (*fn)(const char *name, const char *path, void *data), void *data);
 void output_render(struct overlay *ov, struct output *out);
 void param_set(struct overlay *ov, const char *name, float value);
+float param_get(struct overlay *ov, const char *name, float fallback);
 double now_seconds(void);
+
+/* sound.c */
+void sound_update(struct overlay *ov, bool force); /* call often; cheap between 0.25 s ticks */
+void sound_finish(struct overlay *ov);
+bool sound_available(void);
+/* A sound name ("rain") or a path -> absolute path of an existing file. */
+const char *sound_resolve(const char *name, char *buf);
+const char *sound_current(struct overlay *ov);
 
 /* ipc.c */
 bool ipc_init(struct overlay *ov);

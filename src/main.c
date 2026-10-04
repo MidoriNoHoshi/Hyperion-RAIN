@@ -24,32 +24,25 @@ static void on_signal(int sig) { got_signal = sig; }
 static void usage(FILE *f)
 {
 	fprintf(f,
+		"Hyperion-RAIN %s · Hyprland effects overlay · a NyaBi project · nyabi.org\n"
+		"\n"
 		"usage: gl-overlay [options]            run the daemon\n"
 		"       gl-overlay ctl <command> [args]  control a running daemon\n"
 		"\n"
 		"options:\n"
-		"  -s, --shader PATH     fragment shader (default: rain.frag)\n"
+		"  -s, --shader EFFECT   effect name (rain, snow, …) or a .frag path (default: rain)\n"
 		"  -o, --output NAME     only cover this output (e.g. DP-1)\n"
 		"  -a, --opacity F       global opacity 0..1 (default 1)\n"
 		"  -f, --fps N           frame rate cap (default: monitor refresh)\n"
 		"  -p, --param NAME=F    preset a shader uniform (repeatable)\n"
+		"  -m, --sound SPEC      play a soundtrack: on (the effect's own, e.g. rain),\n"
+		"                        off (default), a sound name or an audio file\n"
+		"      --volume F        soundtrack volume 0..1 (default 0.6)\n"
 		"  -S, --socket PATH     IPC socket path\n"
 		"  -h, --help\n"
+		"  -v, --version\n"
 		"\n"
-		"run `gl-overlay ctl help` for control commands.\n");
-}
-
-static const char *find_default_shader(char *buf, size_t len)
-{
-	const char *candidates[] = {
-		"shaders/rain.frag",
-		GL_OVERLAY_DATADIR "/shaders/rain.frag",
-	};
-	for (size_t i = 0; i < sizeof candidates / sizeof *candidates; i++)
-		if (access(candidates[i], R_OK) == 0 && realpath(candidates[i], buf))
-			return buf;
-	(void)len;
-	return NULL;
+		"run `gl-overlay ctl help` for control commands.\n", GL_OVERLAY_VERSION);
 }
 
 int main(int argc, char **argv)
@@ -71,6 +64,7 @@ int main(int argc, char **argv)
 		.ipc_fd = -1,
 		.inotify_fd = -1,
 		.timer_fd = -1,
+		.volume = 0.6f,
 	};
 	const char *shader = NULL;
 
@@ -81,11 +75,15 @@ int main(int argc, char **argv)
 		{ "fps",     required_argument, 0, 'f' },
 		{ "param",   required_argument, 0, 'p' },
 		{ "socket",  required_argument, 0, 'S' },
+		{ "sound",   required_argument, 0, 'm' },
+		{ "volume",  required_argument, 0, 'V' },
 		{ "help",    no_argument,       0, 'h' },
+		{ "version", no_argument,       0, 'v' },
 		{ 0 },
 	};
 	int c;
-	while ((c = getopt_long(argc, argv, "s:o:a:f:p:S:h", opts, NULL)) != -1) {
+	const char *sound = NULL;
+	while ((c = getopt_long(argc, argv, "s:o:a:f:p:S:m:hv", opts, NULL)) != -1) {
 		switch (c) {
 		case 's': shader = optarg; break;
 		case 'o': ov.only_output = optarg; break;
@@ -103,7 +101,10 @@ int main(int argc, char **argv)
 			break;
 		}
 		case 'S': socket_path = optarg; break;
+		case 'm': sound = optarg; break;
+		case 'V': ov.volume = strtof(optarg, NULL); break;
 		case 'h': usage(stdout); return 0;
+		case 'v': printf("Hyperion-RAIN (gl-overlay) %s · a NyaBi project\n", GL_OVERLAY_VERSION); return 0;
 		default:  usage(stderr); return 1;
 		}
 	}
@@ -113,14 +114,23 @@ int main(int argc, char **argv)
 		snprintf(ov.ipc_path, sizeof ov.ipc_path, "%s", socket_path);
 
 	char shader_buf[PATH_MAX];
-	if (shader) {
-		if (!realpath(shader, shader_buf)) {
-			fprintf(stderr, "gl-overlay: %s: %s\n", shader, strerror(errno));
-			return 1;
-		}
-	} else if (!find_default_shader(shader_buf, sizeof shader_buf)) {
-		fprintf(stderr, "gl-overlay: no shader given and rain.frag not found\n");
+	if (!shader_resolve(shader ? shader : "rain", shader_buf)) {
+		fprintf(stderr, "gl-overlay: %s: no such effect or shader file\n", shader ? shader : "rain");
 		return 1;
+	}
+
+	if (sound && strcmp(sound, "off") != 0) {
+		if (!sound_available()) {
+			fprintf(stderr, "gl-overlay: built without sound (libmpv); ignoring --sound\n");
+		} else if (strcmp(sound, "on") != 0) {
+			if (!sound_resolve(sound, ov.sound_custom)) {
+				fprintf(stderr, "gl-overlay: %s: no such sound or audio file\n", sound);
+				return 1;
+			}
+			ov.sound_on = true;
+		} else {
+			ov.sound_on = true;
+		}
 	}
 
 	int ret = 1;
@@ -131,6 +141,7 @@ int main(int argc, char **argv)
 	if (!shader_load(&ov, shader_buf))
 		goto out;
 	watch_shader(&ov);
+	sound_update(&ov, true);
 	ov.timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
 	wl_create_surfaces(&ov);
 
@@ -183,6 +194,7 @@ int main(int argc, char **argv)
 	ret = 0;
 
 out:
+	sound_finish(&ov);
 	/* EGL surfaces -> EGL context/display -> Wayland connection. */
 	wl_destroy_outputs(&ov);
 	gl_finish(&ov);

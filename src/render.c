@@ -2,10 +2,14 @@
  * EGL/GLES3 side: context setup, ShaderToy-compatible shader wrapping,
  * noise channel textures and per-output rendering.
  */
+#include <ctype.h>
+#include <dirent.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "overlay.h"
 #include <EGL/eglext.h>
@@ -115,6 +119,12 @@ static struct param *param_add(struct overlay *ov, const char *name)
 	return p;
 }
 
+float param_get(struct overlay *ov, const char *name, float fallback)
+{
+	struct param *p = param_find(ov, name);
+	return p ? p->value : fallback;
+}
+
 /* Runtime (IPC) override. Sticks across shader reloads. */
 void param_set(struct overlay *ov, const char *name, float value)
 {
@@ -142,6 +152,15 @@ static void preprocess(struct overlay *ov, char *src)
 		if (strncmp(s, "#version", 8) == 0) {
 			for (char *c = line; c < (next ? next : line + strlen(line)); c++)
 				*c = ' ';
+		} else if (strncmp(s, "#pragma sound", 13) == 0) {
+			/* `#pragma sound <name> [param]`: default soundtrack, loudness follows param */
+			char name[64] = "", follow[64] = "";
+			if (sscanf(s + 13, " %63s %63s", name, follow) >= 1 && name[0] != '/') {
+				snprintf(ov->sound_effect, sizeof ov->sound_effect, "%s", name);
+				/* a trailing // comment is not a parameter */
+				snprintf(ov->sound_follow, sizeof ov->sound_follow, "%s",
+				         isalpha((unsigned char)follow[0]) || follow[0] == '_' ? follow : "");
+			}
 		} else if (strncmp(s, "#pragma param", 13) == 0) {
 			char name[64];
 			float def;
@@ -162,6 +181,19 @@ bool shader_load(struct overlay *ov, const char *path)
 		fprintf(stderr, "gl-overlay: cannot read shader '%s'\n", path);
 		return false;
 	}
+	/* Another effect: start from its own defaults, so e.g. rain's uWind
+	 * doesn't carry over into snow. Reloading the same file keeps them. */
+	bool switching = ov->program && strcmp(path, ov->shader_path) != 0;
+	struct param saved[MAX_PARAMS];
+	int n_saved = ov->n_params;
+	if (switching) {
+		memcpy(saved, ov->params, sizeof saved);
+		ov->n_params = 0;
+	}
+	char saved_sound[64], saved_follow[64];
+	memcpy(saved_sound, ov->sound_effect, sizeof saved_sound);
+	memcpy(saved_follow, ov->sound_follow, sizeof saved_follow);
+	ov->sound_effect[0] = ov->sound_follow[0] = '\0';
 	preprocess(ov, src);
 
 	const char *frag_srcs[] = { frag_header, "#line 1\n", src, frag_footer };
@@ -171,7 +203,7 @@ bool shader_load(struct overlay *ov, const char *path)
 	if (!vs || !fs) {
 		if (vs) glDeleteShader(vs);
 		if (fs) glDeleteShader(fs);
-		return false; /* keep the previous program running */
+		goto fail; /* keep the previous program running */
 	}
 
 	GLuint prog = glCreateProgram();
@@ -188,7 +220,7 @@ bool shader_load(struct overlay *ov, const char *path)
 		glGetProgramInfoLog(prog, sizeof log, NULL, log);
 		fprintf(stderr, "gl-overlay: link error:\n%s", log);
 		glDeleteProgram(prog);
-		return false;
+		goto fail;
 	}
 
 	if (ov->program)
@@ -199,6 +231,73 @@ bool shader_load(struct overlay *ov, const char *path)
 	ov->frame = 0;
 	fprintf(stderr, "gl-overlay: loaded %s\n", path);
 	return true;
+
+fail:
+	if (switching) {
+		memcpy(ov->params, saved, sizeof saved);
+		ov->n_params = n_saved;
+	}
+	memcpy(ov->sound_effect, saved_sound, sizeof saved_sound);
+	memcpy(ov->sound_follow, saved_follow, sizeof saved_follow);
+	return false;
+}
+
+/* Where effects live, first match wins: the source tree (when run from it),
+ * the user's own, then the installed ones. */
+static int shader_dirs(const char *dirs[3], char *user, size_t len)
+{
+	int n = 0;
+	dirs[n++] = "shaders";
+	const char *xdg = getenv("XDG_DATA_HOME"), *home = getenv("HOME");
+	if (xdg && *xdg)
+		snprintf(user, len, "%s/gl-overlay/shaders", xdg), dirs[n++] = user;
+	else if (home)
+		snprintf(user, len, "%s/.local/share/gl-overlay/shaders", home), dirs[n++] = user;
+	dirs[n++] = GL_OVERLAY_DATADIR "/shaders";
+	return n;
+}
+
+const char *shader_resolve(const char *name, char *buf)
+{
+	if (strchr(name, '/') || strstr(name, ".frag"))
+		return realpath(name, buf);
+	const char *dirs[3];
+	char user[PATH_MAX - 64], cand[PATH_MAX];
+	int n = shader_dirs(dirs, user, sizeof user);
+	for (int i = 0; i < n; i++) {
+		snprintf(cand, sizeof cand, "%s/%s.frag", dirs[i], name);
+		if (access(cand, R_OK) == 0 && realpath(cand, buf))
+			return buf;
+	}
+	return NULL;
+}
+
+void shader_list(void (*fn)(const char *name, const char *path, void *data), void *data)
+{
+	const char *dirs[3];
+	char user[PATH_MAX - 64], seen[2048] = " ";
+	int n = shader_dirs(dirs, user, sizeof user);
+	for (int i = 0; i < n; i++) {
+		DIR *d = opendir(dirs[i]);
+		if (!d)
+			continue;
+		struct dirent *e;
+		while ((e = readdir(d))) {
+			size_t len = strlen(e->d_name);
+			if (len < 6 || len > 64 || strcmp(e->d_name + len - 5, ".frag"))
+				continue;
+			char name[64], key[70], path[PATH_MAX];
+			snprintf(name, sizeof name, "%.*s", (int)(len - 5), e->d_name);
+			snprintf(key, sizeof key, " %s ", name);
+			if (strstr(seen, key) || strlen(seen) + strlen(key) >= sizeof seen)
+				continue; /* shadowed by an earlier directory */
+			strcat(seen, key + 1);
+			snprintf(path, sizeof path, "%s/%s", dirs[i], e->d_name);
+			char abs[PATH_MAX];
+			fn(name, realpath(path, abs) ? abs : path, data);
+		}
+		closedir(d);
+	}
 }
 
 /* -------------------------------------------------------------- channels */
@@ -307,6 +406,8 @@ void output_render(struct overlay *ov, struct output *out)
 
 	eglMakeCurrent(ov->egl_display, out->egl_surface, out->egl_surface, ov->egl_context);
 	draw_frame(ov, out->width * out->scale, out->height * out->scale, dt);
+
+	sound_update(ov, false);
 
 	/* Request the next frame *before* swapping (swap commits the surface). */
 	if (!ov->paused && ov->visible)

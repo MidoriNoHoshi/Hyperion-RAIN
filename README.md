@@ -1,20 +1,44 @@
-# gl-overlay
+# Hyperion-RAIN
 
-A fullscreen, click-through GLSL shader overlay for Wayland. It draws on the
-`overlay` layer above every window (bars included) and takes no input, so you
-keep using your desktop normally underneath. It ships with `rain.frag`: rain
-on a windowpane.
+**Hyperion-RAIN**, a NyaBi project ([nyabi.org](https://nyabi.org)), is a
+Hyprland effects overlay programme. The program itself is called `gl-overlay`.
+It runs full-screen GLSL shader effects on top of your whole desktop, and every
+click and keypress passes straight through to the windows underneath. Effects:
+
+- **rain** (`rain.frag`): rain on a windowpane. Drops that splatter as they
+  hit the glass, then sit as beads and dry out; runners that cling and dart
+  down leaving a breaking wet trail; falling rain behind the glass that
+  splashes on the ground along the bottom edge; optional dreamy layers.
+- **snow** (`snow.frag`): snowfall through a cold window. Five parallax
+  layers of flakes, gusts, frost growing in from the corners, snow settling on
+  the bottom edge.
+
+More are planned (fireflies, aurora, film grain, CRT). Each effect can come
+with a soundtrack (rain → a rain loop, snow → wind), off by default.
+
+It works on any Wayland compositor with layer-shell support (Hyprland, Sway,
+KDE, niri, river, …), but it is developed on Hyprland.
 
 ## Build & run
 
 ```sh
 meson setup build && ninja -C build
-./build/gl-overlay                         # rain.frag, all outputs
+./build/gl-overlay                         # rain, all outputs
+./build/gl-overlay -s snow -f 30           # an effect by name
 ./build/gl-overlay -s my.frag -o DP-1 -f 30 -p uDrops=1.5 -a 0.8
+./build/gl-overlay -m on --volume 0.5      # with the effect's own sound
+./build/gl-overlay -m ~/Music/storm.flac   # or your own track, looped
 ```
 
-Deps (Arch): `wayland wayland-protocols mesa meson`.
-To install: `meson install -C build`. Shaders go to `$prefix/share/gl-overlay/shaders`.
+Deps (Arch): `wayland wayland-protocols mesa meson`; the control panel also needs `python-gobject gtk4`.
+Sound needs `mpv` (libmpv). Without it the daemon builds silent; force either way with
+`meson setup build -Dsound=enabled|disabled`.
+To install: `sudo meson install -C build`. This installs `gl-overlay`, `hyperion-rain` (the control panel), its launcher entry
+`org.nyabi.hyperion_rain.desktop` and the app icon (`share/icons/hicolor/scalable/apps/org.nyabi.hyperion_rain.svg`).
+Shaders go to `$prefix/share/gl-overlay/shaders`, sounds to `$prefix/share/gl-overlay/sounds`.
+
+`-s` / `ctl load` take an effect name or a path. A name is looked up as `<name>.frag` in `./shaders`,
+`~/.local/share/gl-overlay/shaders` (your own effects) and `$prefix/share/gl-overlay/shaders`, first match wins.
 
 ## Control
 
@@ -24,21 +48,84 @@ gl-overlay ctl pause | resume       # paused = no frames, ~0% GPU
 gl-overlay ctl set uDrops 2         # any `uniform float` in the shader
 gl-overlay ctl set opacity 0.5      # global
 gl-overlay ctl fps 30               # cap; 0 = monitor refresh
-gl-overlay ctl load shaders/x.frag  # swap shader
+gl-overlay ctl load snow            # switch effect (or a .frag path)
+gl-overlay ctl effects              # list the effects it can find
+gl-overlay ctl add uRain -0.2       # nudge (for keybinds)
+gl-overlay ctl toggle-pause
+gl-overlay ctl sound on | off | toggle   # the effect's soundtrack
+gl-overlay ctl sound ~/Music/rain.opus  # your own track, for every effect
+gl-overlay ctl sound default            # back to the effect's own
+gl-overlay ctl volume 0.4               # 0..1 (also `add volume 0.1` for keybinds)
 gl-overlay ctl get | status | reload | quit
 ```
+
+Sound plays through libmpv, so any format mpv reads works. It pauses when the
+overlay is paused or hidden, and its loudness follows the effect's strength
+(`uRain` / `uSnow`) including the slow storm drift, so it swells in a downpour
+and goes quiet in a lull.
 
 The socket lives at `$XDG_RUNTIME_DIR/gl-overlay.sock` and takes plain text
 lines, so `socat` works too. When you save the active shader, the daemon
 reloads it automatically. If the new version fails to compile, the error goes
-to stderr and the old shader keeps running.
+to stderr and the old shader keeps running. Values set with `ctl set` / `-p`
+survive reloads of the same file; loading a different effect starts from that
+effect's own defaults.
 
-Hyprland binds:
+## Control panel
+
+```sh
+python3 gui/hyperion-rain.py          # from the repo (installed: hyprland launcher → Hyperion-RAIN, or `hyperion-rain`)
+hyperion-rain --run "start; preset storm"
+```
+
+The control panel is a small GTK4 window for trying the overlay out, styled like
+Hyperion-PAKT. It has four views:
+
+- **effects:** pick the effect (rain, snow; the planned ones are listed, not
+  selectable yet). Each effect keeps its own settings.
+- **control:** start or stop the daemon, show/hide, pause, frame rate, and a
+  stepper plus slider for every parameter. Changes go to the running overlay
+  live.
+- **presets:** per effect. Rain: dream, realistic, drizzle, quiet teal, storm,
+  neon night. Snow: steady, flurries, still night, blizzard.
+- **hyprland:** a step-by-step guide to adding it to your dotfiles. It detects
+  which config Hyprland uses (Lua `hyprland.lua` or classic `hyprland.conf`),
+  checks your chosen keys against your live binds, and generates a snippet
+  with your current look built in as `-p` flags. Copy it from there.
+
+On the right is a system log with a prompt. Type `help`, view names, `effect snow`, `start`,
+`stop`, `preset <name>`, `theme light`, `copy`, or any daemon command
+(`set uRain 1.5`, `add uRain -0.2`, `status`). Settings are remembered in
+`~/.config/hyperion-rain/gui.json`. Needs `python-gobject` and `gtk4`.
+
+## Hyprland
+
+The control panel's hyprland view writes these lines for you. By hand, for
+Lua config (`hyprland.lua`, `configProvider: lua` in `hyprctl systeminfo`):
+
+```lua
+hl.on("hyprland.start", function()        -- or add the line to your existing block
+	hl.exec_cmd("gl-overlay -f 30")
+end)
+hl.bind("SUPER + ALT + R", hl.dsp.exec_cmd("gl-overlay ctl toggle"))
+hl.bind("SUPER + ALT + P", hl.dsp.exec_cmd("gl-overlay ctl toggle-pause"))
+hl.bind("SUPER + ALT + bracketright", hl.dsp.exec_cmd("gl-overlay ctl add uRain 0.2"), { repeating = true })
+hl.bind("SUPER + ALT + bracketleft", hl.dsp.exec_cmd("gl-overlay ctl add uRain -0.2"), { repeating = true })
+```
+
+For classic `hyprland.conf`:
 
 ```ini
 exec-once = gl-overlay -f 30
-bind = SUPER, F12, exec, gl-overlay ctl toggle
+bind  = SUPER ALT, R, exec, gl-overlay ctl toggle
+bind  = SUPER ALT, P, exec, gl-overlay ctl toggle-pause
+binde = SUPER ALT, bracketright, exec, gl-overlay ctl add uRain 0.2
+binde = SUPER ALT, bracketleft, exec, gl-overlay ctl add uRain -0.2
 ```
+
+For snow, add `-s snow` to the exec line and nudge `uSnow` instead of `uRain`.
+Running from the repo without installing? Use the full path to
+`build/gl-overlay` and add `-s /path/to/shaders/rain.frag`.
 
 ## Writing shaders
 
@@ -62,6 +149,12 @@ The overlay rules:
 - **No pointer.** The surface has an empty input region, so it never receives
   pointer events. `iMouse` is zero unless you push it:
   `ctl set iMouse.x 100`.
+- **Sound:** `#pragma sound <name> [param]` names the effect's default
+  soundtrack, found as `sounds/<name>.{ogg,opus,flac,wav,mp3}` next to the
+  shader's directory, in `~/.local/share/gl-overlay/sounds` or
+  `$prefix/share/gl-overlay/sounds`. With `param`, loudness follows that
+  uniform. The bundled `rain.ogg` and `wind.ogg` are synthesised by
+  `tools/make-sounds.py`, so they carry no third-party licence.
 
 ## rain.frag params
 
@@ -71,13 +164,15 @@ Weather:
 |---|---|---|
 | `uRain` | 1.0 | rain strength (0 dry … 2 downpour) |
 | `uVariation` | 0.7 | how much strength drifts over time, through lulls and downpours (0 = steady) |
-| `uDrops` / `uStreaks` | 1.0 | water on the glass / falling rain, multipliers |
+| `uDrops` / `uStreaks` | 1.0 | water on the glass / falling rain, multipliers. The number of drops on the glass follows the rain strength: new drops land at a rate set by the strength when they hit, so the pane gets wetter in a downpour and slowly dries in a lull |
 | `uWind` | 0.12 | slant of falling rain |
 | `uSpeed` / `uScale` | 1.0 | time scale / drop size |
 | `uMaxDrop` | 18 | hard cap on drop radius in screen pixels (same on every monitor) |
 | `uFog` | 0.035 | condensation around the edges of the pane |
 | `uTint` | 0.04 | overcast veil |
 | `uLightning` | 0 | flash chance, more likely in heavy rain |
+| `uSplash` | 1.0 | drops splatter into a ragged sheet when they hit the glass, pull back into a bead and leave a few satellite specks |
+| `uGround` | 1.0 | rain splashing on the ground along the bottom edge: crowns and droplets, plus spray in a downpour |
 
 Dream layers, all scaled by `uDream` (0 = realistic, 1 = dreamy, 2 = more):
 
@@ -99,9 +194,27 @@ gl-overlay -p uDream=1.5 -p uHue=0.55 -p uRain=0.6    # quiet teal dream
 gl-overlay -p uRain=1.8 -p uVariation=0.3 -p uLightning=0.6 -p uDream=0.4  # storm
 ```
 
-Cost on Intel UHD (Raptor Lake) at 1920×1200: about 5.3 ms/frame dreamy and
-4.3 ms realistic. `-f 30` halves that, and the drops still look smooth.
+The water on the glass is a height field (each drop a shallow cap, each trail a
+thin film), and the light, the dark rim and the glint all come from its slope.
+
+Cost on Intel UHD (Raptor Lake) at 1920×1200: about 5.8 ms/frame dreamy and
+5.0 ms realistic. `-f 30` halves that, and the drops still look smooth.
 Measure your own with `./build/gl-overlay-still -n 120`.
+
+## snow.frag params
+
+| param | default | |
+|---|---|---|
+| `uSnow` | 1.0 | snowfall strength (0 none … 2 blizzard); the number of flakes follows it |
+| `uVariation` | 0.6 | drift between flurries and heavy spells (0 = steady) |
+| `uWind` / `uGusts` | 0.12 / 0.5 | steady sideways drift / gusts and swirl |
+| `uSize` / `uSpeed` | 1.0 | flake size / time scale |
+| `uDepth` | 1.0 | near flakes out of focus |
+| `uFrost` | 0.4 | frost growing in from the corners of the pane |
+| `uPile` | 0.5 | snow settling on the bottom edge (builds up over the first minutes) |
+| `uTint` | 0.03 | cold veil |
+
+About 2.4 ms/frame on the same GPU.
 
 ## Previewing without the overlay
 
@@ -109,6 +222,7 @@ Measure your own with `./build/gl-overlay-still -n 120`.
 
 ```sh
 ./build/gl-overlay-still -t 42 -p uDream=0 -o out.pam
+./build/gl-overlay-still -s shaders/snow.frag -t 300 -o out.pam
 magick wallpaper.png out.pam -composite preview.png
 ```
 
@@ -124,7 +238,8 @@ magick wallpaper.png out.pam -composite preview.png
 | loop | one `poll()` over the Wayland fd, IPC socket, inotify and timerfd |
 
 Source: `src/wayland.c` (surfaces), `src/render.c` (EGL, shader wrapping),
-`src/ipc.c` (socket, CLI, hot reload), `src/main.c` (args, event loop).
+`src/ipc.c` (socket, CLI, hot reload), `src/sound.c` (soundtrack via libmpv),
+`src/main.c` (args, event loop).
 
 ## Roadmap
 

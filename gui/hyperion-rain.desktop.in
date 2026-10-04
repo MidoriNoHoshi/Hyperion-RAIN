@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Hyperion-RAIN
+GenericName=Screen effects overlay
+Comment=Rain, snow and other effects over your Hyprland desktop · a NyaBi project
+Exec=@BINDIR@/hyperion-rain
+Icon=org.nyabi.hyperion_rain
+StartupWMClass=org.nyabi.hyperion_rain
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=rain;snow;overlay;shader;effects;hyprland;rice;

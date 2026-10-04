@@ -1,0 +1,2 @@
+option('sound', type : 'feature', value : 'auto',
+  description : 'soundtrack playback through libmpv')
