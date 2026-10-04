@@ -44,9 +44,9 @@ executable('gl-overlay',
   dependencies : [wayland_client, wayland_egl, egl, glesv2, m, mpv],
   install : true)
 
-install_subdir('shaders', install_dir : get_option('datadir') / 'gl-overlay')
-# Default soundtracks (regenerate with tools/make-sounds.py).
-install_subdir('sounds', install_dir : get_option('datadir') / 'gl-overlay')
+# One directory per effect: effects/<name>-effects/<name>.frag + its sounds
+# (regenerate the sounds with tools/make-sounds.py).
+install_subdir('effects', install_dir : get_option('datadir') / 'gl-overlay')
 
 # Headless single-frame renderer for previews / shader development.
 executable('gl-overlay-still',

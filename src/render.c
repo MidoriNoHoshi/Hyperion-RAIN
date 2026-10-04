@@ -243,17 +243,18 @@ fail:
 }
 
 /* Where effects live, first match wins: the source tree (when run from it),
- * the user's own, then the installed ones. */
-static int shader_dirs(const char *dirs[3], char *user, size_t len)
+ * the user's own, then the installed ones. Each effect is a directory
+ * <name>-effects/ holding <name>.frag and its sounds. */
+int effect_dirs(const char *dirs[3], char *user, size_t len)
 {
 	int n = 0;
-	dirs[n++] = "shaders";
+	dirs[n++] = "effects";
 	const char *xdg = getenv("XDG_DATA_HOME"), *home = getenv("HOME");
 	if (xdg && *xdg)
-		snprintf(user, len, "%s/gl-overlay/shaders", xdg), dirs[n++] = user;
+		snprintf(user, len, "%s/gl-overlay/effects", xdg), dirs[n++] = user;
 	else if (home)
-		snprintf(user, len, "%s/.local/share/gl-overlay/shaders", home), dirs[n++] = user;
-	dirs[n++] = GL_OVERLAY_DATADIR "/shaders";
+		snprintf(user, len, "%s/.local/share/gl-overlay/effects", home), dirs[n++] = user;
+	dirs[n++] = GL_OVERLAY_DATADIR "/effects";
 	return n;
 }
 
@@ -262,10 +263,10 @@ const char *shader_resolve(const char *name, char *buf)
 	if (strchr(name, '/') || strstr(name, ".frag"))
 		return realpath(name, buf);
 	const char *dirs[3];
-	char user[PATH_MAX - 64], cand[PATH_MAX];
-	int n = shader_dirs(dirs, user, sizeof user);
+	char user[PATH_MAX - 160], cand[PATH_MAX];
+	int n = effect_dirs(dirs, user, sizeof user);
 	for (int i = 0; i < n; i++) {
-		snprintf(cand, sizeof cand, "%s/%s.frag", dirs[i], name);
+		snprintf(cand, sizeof cand, "%s/%.64s-effects/%.64s.frag", dirs[i], name, name);
 		if (access(cand, R_OK) == 0 && realpath(cand, buf))
 			return buf;
 	}
@@ -275,8 +276,8 @@ const char *shader_resolve(const char *name, char *buf)
 void shader_list(void (*fn)(const char *name, const char *path, void *data), void *data)
 {
 	const char *dirs[3];
-	char user[PATH_MAX - 64], seen[2048] = " ";
-	int n = shader_dirs(dirs, user, sizeof user);
+	char user[PATH_MAX - 160], seen[2048] = " ";
+	int n = effect_dirs(dirs, user, sizeof user);
 	for (int i = 0; i < n; i++) {
 		DIR *d = opendir(dirs[i]);
 		if (!d)
@@ -284,15 +285,17 @@ void shader_list(void (*fn)(const char *name, const char *path, void *data), voi
 		struct dirent *e;
 		while ((e = readdir(d))) {
 			size_t len = strlen(e->d_name);
-			if (len < 6 || len > 64 || strcmp(e->d_name + len - 5, ".frag"))
+			if (len < 9 || len > 72 || strcmp(e->d_name + len - 8, "-effects"))
 				continue;
 			char name[64], key[70], path[PATH_MAX];
-			snprintf(name, sizeof name, "%.*s", (int)(len - 5), e->d_name);
+			snprintf(name, sizeof name, "%.*s", (int)(len - 8), e->d_name);
 			snprintf(key, sizeof key, " %s ", name);
 			if (strstr(seen, key) || strlen(seen) + strlen(key) >= sizeof seen)
 				continue; /* shadowed by an earlier directory */
+			snprintf(path, sizeof path, "%s/%s/%s.frag", dirs[i], e->d_name, name);
+			if (access(path, R_OK) != 0)
+				continue;
 			strcat(seen, key + 1);
-			snprintf(path, sizeof path, "%s/%s", dirs[i], e->d_name);
 			char abs[PATH_MAX];
 			fn(name, realpath(path, abs) ? abs : path, data);
 		}

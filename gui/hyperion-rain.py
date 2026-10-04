@@ -133,7 +133,7 @@ SNOW = [
 OPACITY = ("opacity", "opacity", 0, 1, .05, 1.0, "the whole overlay, any effect")
 VOLUME = ("volume", "volume", 0, 1, .05, 0.6, "follows the weather's strength")
 
-# Each effect is shaders/<id>.frag. `strength` is what the more / less keys nudge.
+# Each effect is effects/<id>-effects/<id>.frag (+ its sounds). `strength` is what the more / less keys nudge.
 EFFECTS = [
     dict(id="rain", kanji="雨", strength="uRain", sound="rain",
          desc="rain on a windowpane: beads, runners and their trails, falling streaks, optional dream layers",
@@ -178,7 +178,7 @@ def defaults_of(eid):
 
 
 VIEWS = ["effects", "control", "presets", "hyprland"]
-FPS = [("30", 30), ("60", 60), ("max", 0)]
+FPS = ("fps", "frames / s", 1, 60, 1, 30, "1 = a slideshow, almost free · 60 = smooth, full GPU cost")
 KEYS = [  # (id, label, default combo, ctl command, repeat); {noun} / {strength} = the current effect's
     ("toggle", "show / hide", "SUPER + ALT + R", "toggle", False),
     ("pause", "pause / resume", "SUPER + ALT + P", "toggle-pause", False),
@@ -237,7 +237,7 @@ def find_binary():
 def find_shader(installed, effect):
     """The -s argument: the bare effect name for an installed daemon (it searches its own shader
     directories), the absolute path when running from build/ (Hyprland's cwd isn't this repo)."""
-    dev = REPO / "shaders" / f"{effect}.frag"
+    dev = REPO / "effects" / f"{effect}-effects" / f"{effect}.frag"
     if not installed and dev.exists():
         return str(dev)
     return None if effect == "rain" else effect
@@ -332,8 +332,8 @@ class Choice(Gtk.Box):
 class Stepper:
     """PAKT stepper ( name  [ − ]  value  [ + ] ) with a hairline slider and a dim hint."""
 
-    def __init__(self, app, spec, store):
-        self.app, self.store = app, store
+    def __init__(self, app, spec, store, on_change=None):
+        self.app, self.store, self.on_change = app, store, on_change
         self.name, text, lo, hi, step, default, hint = spec
         self.step = step
         row = Gtk.Box(spacing=10)
@@ -369,7 +369,7 @@ class Stepper:
         v = round(scale.get_value() / self.step) * self.step
         self.value.set_text(fmt(v, self.step))
         if not self.app.quiet:
-            self.app.set_param(self.name, v, self.store)
+            (self.on_change or self.app.set_param)(self.name, v, self.store)
 
 
 # --------------------------------------------------------------------------------------------------------- app
@@ -390,7 +390,7 @@ class RainPanel(Gtk.Application):
                         "volume": float(saved.get("_", {}).get("volume", VOLUME[5]))}
         self.sound = bool(prefs.get("sound", False))
         self.track = prefs.get("track", "")                  # "" = the effect's own sound
-        self.fps = prefs.get("fps", 30)
+        self.fps = min(max(int(prefs.get("fps", 30)), 1), 60) if prefs.get("fps", 30) else 60  # 0 = old "max"
         self.keys = dict({k[0]: k[2] for k in KEYS}, **prefs.get("keys", {}))
         self.view = prefs.get("view", "control")
         self.quiet = 0
@@ -580,10 +580,9 @@ class RainPanel(Gtk.Application):
         daemon.append(keys)
         box.append(daemon)
 
-        fps = section("frame rate", "30 halves the GPU cost; drops still look smooth")
-        self.fps_choice = Choice(self, [f[0] for f in FPS], [f[1] for f in FPS].index(self.fps)
-                                 if self.fps in [f[1] for f in FPS] else 0, self.set_fps)
-        fps.append(self.fps_choice)
+        fps = section("frame rate", "GPU cost scales with it: 15 ≈ a quarter of 60")
+        self.fps_stepper = Stepper(self, FPS, {"fps": self.fps}, self.set_fps)
+        fps.append(self.fps_stepper.widget)
         box.append(fps)
 
         box.append(self.build_sound())
@@ -758,7 +757,7 @@ class RainPanel(Gtk.Application):
         self.effect = eid
         if load and self.online:
             cmd, path, installed = find_binary()
-            target = str(REPO / "shaders" / f"{eid}.frag") if not installed else eid
+            target = str(REPO / "effects" / f"{eid}-effects" / f"{eid}.frag") if not installed else eid
             reply = ctl(f"load {target}")
             if not reply or reply.startswith("error"):
                 self.log("gl-overlay", (reply or "offline").strip(), "err")
@@ -1120,6 +1119,15 @@ class RainPanel(Gtk.Application):
             self.sound = snd != "off"
             self.sound_choice.pick(int(self.sound), notify=False)
             self.save_prefs()
+        try:  # fps changed elsewhere (ctl fps, a key bind): follow it
+            cap = round(float(self.status.get("fps_cap", "")))
+        except ValueError:
+            cap = None
+        if online and cap and 1 <= cap <= 60 and cap != self.fps and hasattr(self, "fps_stepper"):
+            self.fps = cap
+            self.fps_stepper.store["fps"] = cap
+            self.fps_stepper.set(cap)
+            self.save_prefs()
         # started elsewhere (e.g. from hyprland.lua with -s snow): follow the daemon's effect
         running = Path(self.status.get("shader", "")).stem
         if online and running in EFFECT and running != self.effect:
@@ -1180,11 +1188,10 @@ class RainPanel(Gtk.Application):
         if hasattr(self, "snippet"):
             self.refresh_hypr()
 
-    def set_fps(self, i):
-        self.fps = FPS[i][1]
+    def set_fps(self, _name, v, store):
+        self.fps = store["fps"] = int(v)
         if self.online:
-            self.cmd(f"fps {self.fps}", echo=False)
-        self.log("rain", f"fps {FPS[i][0]}", "dim")
+            ctl(f"fps {self.fps}")
         self.save_prefs()
         self.refresh_hypr()
 

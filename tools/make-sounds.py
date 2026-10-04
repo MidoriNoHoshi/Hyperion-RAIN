@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Synthesise the default soundtracks: sounds/rain.ogg and sounds/wind.ogg.
+"""Synthesise the default soundtracks: effects/rain-effects/rain.ogg and effects/snow-effects/wind.ogg.
 
 Everything is generated from noise, so the files carry no third-party licence.
 Each is a seamless loop (the tail is crossfaded into the head). Needs numpy,
 scipy and ffmpeg (libopus).
 
-    python3 tools/make-sounds.py            # writes sounds/*.ogg
+    python3 tools/make-sounds.py            # writes the .ogg files into the effect directories
 """
 import subprocess
 import sys
@@ -17,7 +17,8 @@ from scipy import signal
 SR = 48000
 LOOP = 60.0          # seconds
 XFADE = 4.0          # seconds crossfaded at the loop point
-OUT = Path(__file__).resolve().parent.parent / "sounds"
+EFFECTS = Path(__file__).resolve().parent.parent / "effects"
+HOME = {"rain": "rain-effects", "wind": "snow-effects"}  # which effect each sound belongs to
 rng = np.random.default_rng(20261004)
 
 
@@ -126,8 +127,7 @@ def wind():
 
 
 def write(name, x):
-    OUT.mkdir(exist_ok=True)
-    path = OUT / f"{name}.ogg"
+    path = EFFECTS / HOME[name] / f"{name}.ogg"
     pcm = (np.clip(x, -1, 1) * 32767).astype("<i2").tobytes()
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "s16le", "-ar", str(SR), "-ac", "2",
                     "-i", "-", "-c:a", "libopus", "-b:a", "96k",

@@ -5,11 +5,11 @@ Hyprland effects overlay programme. The program itself is called `gl-overlay`.
 It runs full-screen GLSL shader effects on top of your whole desktop, and every
 click and keypress passes straight through to the windows underneath. Effects:
 
-- **rain** (`rain.frag`): rain on a windowpane. Drops that splatter as they
+- **rain** (`effects/rain-effects/`): rain on a windowpane. Drops that splatter as they
   hit the glass, then sit as beads and dry out; runners that cling and dart
   down leaving a breaking wet trail; falling rain behind the glass that
   splashes on the ground along the bottom edge; optional dreamy layers.
-- **snow** (`snow.frag`): snowfall through a cold window. Five parallax
+- **snow** (`effects/snow-effects/`): snowfall through a cold window. Five parallax
   layers of flakes, gusts, frost growing in from the corners, snow settling on
   the bottom edge.
 
@@ -35,10 +35,21 @@ Sound needs `mpv` (libmpv). Without it the daemon builds silent; force either wa
 `meson setup build -Dsound=enabled|disabled`.
 To install: `sudo meson install -C build`. This installs `gl-overlay`, `hyperion-rain` (the control panel), its launcher entry
 `org.nyabi.hyperion_rain.desktop` and the app icon (`share/icons/hicolor/scalable/apps/org.nyabi.hyperion_rain.svg`).
-Shaders go to `$prefix/share/gl-overlay/shaders`, sounds to `$prefix/share/gl-overlay/sounds`.
+Effects go to `$prefix/share/gl-overlay/effects`.
 
-`-s` / `ctl load` take an effect name or a path. A name is looked up as `<name>.frag` in `./shaders`,
-`~/.local/share/gl-overlay/shaders` (your own effects) and `$prefix/share/gl-overlay/shaders`, first match wins.
+## Effects layout
+
+Each effect is one directory, `<name>-effects/`, holding its shader `<name>.frag` and its sounds:
+
+```
+effects/
+  rain-effects/   rain.frag  rain.ogg
+  snow-effects/   snow.frag  wind.ogg
+```
+
+`-s` / `ctl load` take an effect name or a path. A name is looked up as `<name>-effects/<name>.frag` in
+`./effects`, `~/.local/share/gl-overlay/effects` (your own effects) and `$prefix/share/gl-overlay/effects`,
+first match wins. To add an effect, make a new `<name>-effects/` directory in one of those places.
 
 ## Control
 
@@ -47,7 +58,7 @@ gl-overlay ctl toggle               # show/hide
 gl-overlay ctl pause | resume       # paused = no frames, ~0% GPU
 gl-overlay ctl set uDrops 2         # any `uniform float` in the shader
 gl-overlay ctl set opacity 0.5      # global
-gl-overlay ctl fps 30               # cap; 0 = monitor refresh
+gl-overlay ctl fps 30               # cap, any value 1..60; 0 = monitor refresh
 gl-overlay ctl load snow            # switch effect (or a .frag path)
 gl-overlay ctl effects              # list the effects it can find
 gl-overlay ctl add uRain -0.2       # nudge (for keybinds)
@@ -125,7 +136,7 @@ binde = SUPER ALT, bracketleft, exec, gl-overlay ctl add uRain -0.2
 
 For snow, add `-s snow` to the exec line and nudge `uSnow` instead of `uRain`.
 Running from the repo without installing? Use the full path to
-`build/gl-overlay` and add `-s /path/to/shaders/rain.frag`.
+`build/gl-overlay` and add `-s /path/to/effects/rain-effects/rain.frag`.
 
 ## Writing shaders
 
@@ -150,9 +161,8 @@ The overlay rules:
   pointer events. `iMouse` is zero unless you push it:
   `ctl set iMouse.x 100`.
 - **Sound:** `#pragma sound <name> [param]` names the effect's default
-  soundtrack, found as `sounds/<name>.{ogg,opus,flac,wav,mp3}` next to the
-  shader's directory, in `~/.local/share/gl-overlay/sounds` or
-  `$prefix/share/gl-overlay/sounds`. With `param`, loudness follows that
+  soundtrack, found as `<name>.{ogg,opus,flac,wav,mp3}` in the effect's own
+  directory first, then in any other `<effect>-effects/` directory. With `param`, loudness follows that
   uniform. The bundled `rain.ogg` and `wind.ogg` are synthesised by
   `tools/make-sounds.py`, so they carry no third-party licence.
 
@@ -198,7 +208,8 @@ The water on the glass is a height field (each drop a shallow cap, each trail a
 thin film), and the light, the dark rim and the glint all come from its slope.
 
 Cost on Intel UHD (Raptor Lake) at 1920×1200: about 5.8 ms/frame dreamy and
-5.0 ms realistic. `-f 30` halves that, and the drops still look smooth.
+5.0 ms realistic. GPU cost scales with the frame rate: `-f 30` halves it and
+the drops still look smooth; `-f 5` or lower is nearly free (a slow slideshow).
 Measure your own with `./build/gl-overlay-still -n 120`.
 
 ## snow.frag params
@@ -222,7 +233,7 @@ About 2.4 ms/frame on the same GPU.
 
 ```sh
 ./build/gl-overlay-still -t 42 -p uDream=0 -o out.pam
-./build/gl-overlay-still -s shaders/snow.frag -t 300 -o out.pam
+./build/gl-overlay-still -s snow -t 300 -o out.pam
 magick wallpaper.png out.pam -composite preview.png
 ```
 
@@ -234,7 +245,7 @@ magick wallpaper.png out.pam -composite preview.png
 | surface | `zwlr_layer_shell_v1`, layer `OVERLAY`, anchored to all edges, `exclusive_zone = -1` (covers bars), keyboard interactivity `NONE`, one surface per `wl_output` (hotplug handled) |
 | passthrough | `wl_surface.set_input_region(<empty region>)`. **Not `NULL`:** `NULL` means *infinite* and would swallow every click |
 | GPU | EGL 1.5 (`EGL_PLATFORM_WAYLAND_KHR`) + GLES 3.0, RGBA8 config, one shared context, fullscreen triangle |
-| pacing | `wl_surface.frame` callbacks with swap interval 0. No busy loop; when paused or hidden there are zero frames. An optional fps cap uses a `timerfd` |
+| pacing | `wl_surface.frame` callbacks with swap interval 0. No busy loop; when paused or hidden there are zero frames. An optional fps cap (any value, e.g. 1..60) parks early frame callbacks and wakes them with a `timerfd` |
 | loop | one `poll()` over the Wayland fd, IPC socket, inotify and timerfd |
 
 Source: `src/wayland.c` (surfaces), `src/render.c` (EGL, shader wrapping),

@@ -99,6 +99,8 @@ void gl_finish(struct overlay *ov);
 bool shader_load(struct overlay *ov, const char *path);
 /* An effect name ("snow") or a path -> absolute path of an existing .frag. */
 const char *shader_resolve(const char *name, char *buf);
+/* The effect roots (./effects, user, installed); returns how many. */
+int effect_dirs(const char *dirs[3], char *user, size_t len);
 /* Calls fn(name, path) for every effect found in the shader directories. */
 void shader_list(void (*fn)(const char *name, const char *path, void *data), void *data);
 void output_render(struct overlay *ov, struct output *out);

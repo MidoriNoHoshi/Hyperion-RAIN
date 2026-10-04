@@ -33,7 +33,7 @@ static void usage(FILE *f)
 		"  -s, --shader EFFECT   effect name (rain, snow, …) or a .frag path (default: rain)\n"
 		"  -o, --output NAME     only cover this output (e.g. DP-1)\n"
 		"  -a, --opacity F       global opacity 0..1 (default 1)\n"
-		"  -f, --fps N           frame rate cap (default: monitor refresh)\n"
+		"  -f, --fps N           frame rate cap, e.g. 1..60 (default: monitor refresh)\n"
 		"  -p, --param NAME=F    preset a shader uniform (repeatable)\n"
 		"  -m, --sound SPEC      play a soundtrack: on (the effect's own, e.g. rain),\n"
 		"                        off (default), a sound name or an audio file\n"

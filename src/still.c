@@ -2,7 +2,7 @@
  * gl-overlay-still — render one frame of a shader headlessly, for previews
  * and shader development without touching the live desktop.
  *
- *   gl-overlay-still -s shaders/rain.frag -t 42 -p uDream=0 -o out.pam
+ *   gl-overlay-still -s rain -t 42 -p uDream=0 -o out.pam
  *   magick bg.png out.pam -composite preview.png
  *
  * Output is PAM (RGB_ALPHA, straight alpha), top row first.
@@ -18,7 +18,7 @@
 int main(int argc, char **argv)
 {
 	struct overlay ov = { .opacity = 1.0f, .visible = true };
-	const char *shader = "shaders/rain.frag", *outpath = "still.pam";
+	const char *shader = "rain", *outpath = "still.pam";
 	int w = 1920, h = 1200;
 	double t = 10.0;
 	int bench = 0;
@@ -41,13 +41,18 @@ int main(int argc, char **argv)
 			break;
 		}
 		default:
-			fprintf(stderr, "usage: gl-overlay-still [-s shader] [-o out.pam] "
+			fprintf(stderr, "usage: gl-overlay-still [-s effect|shader.frag] [-o out.pam] "
 			                "[-t seconds] [-w W] [-h H] [-n bench_frames] [-p name=value]...\n");
 			return 1;
 		}
 	}
 
-	if (!gl_init(&ov, true) || !shader_load(&ov, shader))
+	char path[PATH_MAX];
+	if (!shader_resolve(shader, path)) {
+		fprintf(stderr, "gl-overlay-still: %s: no such effect or shader file\n", shader);
+		return 1;
+	}
+	if (!gl_init(&ov, true) || !shader_load(&ov, path))
 		return 1;
 
 	GLuint fbo, rb;

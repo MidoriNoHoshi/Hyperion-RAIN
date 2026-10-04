@@ -2,12 +2,13 @@
  * Soundtrack: one looping audio file played through libmpv.
  *
  * Each effect may name a default sound with `#pragma sound <name> [param]`;
- * <name> is looked up as sounds/<name>.{ogg,opus,flac,wav,mp3} in the same
- * places as the shaders. When [param] is given (e.g. uRain), loudness follows
+ * <name> is looked up as <name>.{ogg,opus,flac,wav,mp3} in the effect's own
+ * directory first, then in every <effect>-effects/ directory. When [param] is given (e.g. uRain), loudness follows
  * that parameter and the same slow storm drift the shader uses, so the rain
  * swells in a downpour and fades in a lull. Sound is off until asked for:
  * `-m on`, `ctl sound on`, or a file of your own with `ctl sound <path>`.
  */
+#include <dirent.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -27,44 +28,59 @@
 
 static const char *exts[] = { "ogg", "opus", "flac", "wav", "mp3" };
 
+static const char *in_dir(const char *dir, const char *name, char *buf)
+{
+	char cand[PATH_MAX + 128];
+	for (size_t e = 0; e < sizeof exts / sizeof *exts; e++) {
+		snprintf(cand, sizeof cand, "%s/%s.%s", dir, name, exts[e]);
+		if (access(cand, R_OK) == 0 && realpath(cand, buf))
+			return buf;
+	}
+	return NULL;
+}
+
 const char *sound_resolve(const char *name, char *buf)
 {
 	if (strchr(name, '/') || strchr(name, '.'))
 		return realpath(name, buf);
-	char user[PATH_MAX - 64], cand[PATH_MAX];
-	const char *xdg = getenv("XDG_DATA_HOME"), *home = getenv("HOME");
-	if (xdg && *xdg)
-		snprintf(user, sizeof user, "%s/gl-overlay/sounds", xdg);
-	else
-		snprintf(user, sizeof user, "%s/.local/share/gl-overlay/sounds", home ? home : "");
-	const char *dirs[] = { "sounds", user, GL_OVERLAY_DATADIR "/sounds" };
-	for (size_t d = 0; d < sizeof dirs / sizeof *dirs; d++)
-		for (size_t e = 0; e < sizeof exts / sizeof *exts; e++) {
-			snprintf(cand, sizeof cand, "%s/%s.%s", dirs[d], name, exts[e]);
-			if (access(cand, R_OK) == 0 && realpath(cand, buf))
-				return buf;
+	const char *dirs[3];
+	char user[PATH_MAX - 160], sub[PATH_MAX];
+	int n = effect_dirs(dirs, user, sizeof user);
+	for (int i = 0; i < n; i++) {
+		DIR *d = opendir(dirs[i]);
+		if (!d)
+			continue;
+		struct dirent *e;
+		const char *found = NULL;
+		while (!found && (e = readdir(d))) {
+			size_t len = strlen(e->d_name);
+			if (len < 9 || strcmp(e->d_name + len - 8, "-effects"))
+				continue;
+			snprintf(sub, sizeof sub, "%s/%s", dirs[i], e->d_name);
+			found = in_dir(sub, name, buf);
 		}
+		closedir(d);
+		if (found)
+			return found;
+	}
 	return NULL;
 }
 
 /* The file that should be playing now: a custom track, else the effect's own,
- * looked for next to the shader first (../sounds), then in the usual places. */
+ * looked for next to the shader first, then in the other effect directories. */
 static const char *wanted(struct overlay *ov, char *buf)
 {
 	if (ov->sound_custom[0])
 		return ov->sound_custom;
 	if (!ov->sound_effect[0])
 		return NULL;
-	char dir[PATH_MAX], cand[PATH_MAX + 128];
+	char dir[PATH_MAX];
 	snprintf(dir, sizeof dir, "%s", ov->shader_path);
 	char *slash = strrchr(dir, '/');
 	if (slash) {
 		*slash = '\0';
-		for (size_t e = 0; e < sizeof exts / sizeof *exts; e++) {
-			snprintf(cand, sizeof cand, "%s/../sounds/%s.%s", dir, ov->sound_effect, exts[e]);
-			if (access(cand, R_OK) == 0 && realpath(cand, buf))
-				return buf;
-		}
+		if (in_dir(dir, ov->sound_effect, buf))
+			return buf;
 	}
 	return sound_resolve(ov->sound_effect, buf);
 }
