@@ -2,6 +2,7 @@
  * Wayland side: registry, per-output layer-shell surfaces, input passthrough
  * and frame-callback pacing.
  */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,23 @@ static void output_destroy_surface(struct output *out);
 
 /* ---------------------------------------------------------------- frames */
 
+/* Seconds until this output should render again: the fps cap, and for an
+ * effect drawn on steps (`#pragma fps`), the start of its next drawing. */
+static double frame_wait(struct overlay *ov, struct output *out, double now)
+{
+	double wait = 0;
+	if (ov->min_frame_interval > 0)
+		wait = out->last_render + ov->min_frame_interval - now;
+	float step = ov->step_follow[0] ? param_get(ov, ov->step_follow, 0) : 0;
+	if (step > 0 && !ov->paused && ov->last_frame > 0) {
+		double t = ov->time + (now - ov->last_frame);
+		double next = (floor(out->render_time * step) + 1) / step + 0.001;
+		if (next - t > wait)
+			wait = next - t;
+	}
+	return wait;
+}
+
 static void frame_done(void *data, struct wl_callback *cb, uint32_t time)
 {
 	struct output *out = data;
@@ -24,8 +42,8 @@ static void frame_done(void *data, struct wl_callback *cb, uint32_t time)
 	out->frame_cb = NULL;
 
 	/* FPS cap: if the compositor is faster than we want, park until due. */
-	if (ov->min_frame_interval > 0 && !out->dirty) {
-		double wait = out->last_render + ov->min_frame_interval - now_seconds();
+	if (!out->dirty) {
+		double wait = frame_wait(ov, out, now_seconds());
 		if (wait > 0.002) {
 			out->waiting = true;
 			struct itimerspec its = {
@@ -50,7 +68,7 @@ void timer_handle(struct overlay *ov)
 	wl_list_for_each(out, &ov->outputs, link) {
 		if (!out->waiting)
 			continue;
-		double wait = out->last_render + ov->min_frame_interval - now;
+		double wait = frame_wait(ov, out, now);
 		if (wait <= 0.002) {
 			out->waiting = false;
 			output_render(ov, out);

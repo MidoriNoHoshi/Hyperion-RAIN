@@ -161,6 +161,12 @@ static void preprocess(struct overlay *ov, char *src)
 				snprintf(ov->sound_follow, sizeof ov->sound_follow, "%s",
 				         isalpha((unsigned char)follow[0]) || follow[0] == '_' ? follow : "");
 			}
+		} else if (strncmp(s, "#pragma fps", 11) == 0) {
+			/* `#pragma fps <param>`: the picture only changes every 1/param s
+			 * (held drawings), so render once per step, right after it starts */
+			char name[64] = "";
+			if (sscanf(s + 11, " %63s", name) == 1 && (isalpha((unsigned char)name[0]) || name[0] == '_'))
+				snprintf(ov->step_follow, sizeof ov->step_follow, "%s", name);
 		} else if (strncmp(s, "#pragma param", 13) == 0) {
 			char name[64];
 			float def;
@@ -190,10 +196,11 @@ bool shader_load(struct overlay *ov, const char *path)
 		memcpy(saved, ov->params, sizeof saved);
 		ov->n_params = 0;
 	}
-	char saved_sound[64], saved_follow[64];
+	char saved_sound[64], saved_follow[64], saved_step[64];
 	memcpy(saved_sound, ov->sound_effect, sizeof saved_sound);
 	memcpy(saved_follow, ov->sound_follow, sizeof saved_follow);
-	ov->sound_effect[0] = ov->sound_follow[0] = '\0';
+	memcpy(saved_step, ov->step_follow, sizeof saved_step);
+	ov->sound_effect[0] = ov->sound_follow[0] = ov->step_follow[0] = '\0';
 	preprocess(ov, src);
 
 	const char *frag_srcs[] = { frag_header, "#line 1\n", src, frag_footer };
@@ -239,6 +246,7 @@ fail:
 	}
 	memcpy(ov->sound_effect, saved_sound, sizeof saved_sound);
 	memcpy(ov->sound_follow, saved_follow, sizeof saved_follow);
+	memcpy(ov->step_follow, saved_step, sizeof saved_step);
 	return false;
 }
 
@@ -406,6 +414,7 @@ void output_render(struct overlay *ov, struct output *out)
 		ov->time += dt;
 	ov->last_frame = now;
 	out->last_render = now;
+	out->render_time = ov->time;
 
 	eglMakeCurrent(ov->egl_display, out->egl_surface, out->egl_surface, ov->egl_context);
 	draw_frame(ov, out->width * out->scale, out->height * out->scale, dt);

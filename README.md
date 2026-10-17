@@ -12,9 +12,12 @@ click and keypress passes straight through to the windows underneath. Effects:
 - **snow** (`effects/snow-effects/`): snowfall through a cold window. Five parallax
   layers of flakes, gusts, frost growing in from the corners, snow settling on
   the bottom edge.
+- **anime** (`effects/anime-effects/`): rain drawn the way old anime and Ghibli
+  films draw it. Straight pen lines from a short loop of drawings, held on
+  twos (12 drawings a second), and splashes that replay the same five cels.
 
 More are planned (fireflies, aurora, film grain, CRT). Each effect can come
-with a soundtrack (rain → a rain loop, snow → wind), off by default.
+with a soundtrack (rain and anime → a rain loop, snow → wind), off by default.
 
 It works on any Wayland compositor with layer-shell support (Hyprland, Sway,
 KDE, niri, river, …), but it is developed on Hyprland.
@@ -45,6 +48,7 @@ Each effect is one directory, `<name>-effects/`, holding its shader `<name>.frag
 effects/
   rain-effects/   rain.frag  rain.ogg
   snow-effects/   snow.frag  wind.ogg
+  anime-effects/  anime.frag  (uses rain.ogg from rain-effects)
 ```
 
 `-s` / `ctl load` take an effect name or a path. A name is looked up as `<name>-effects/<name>.frag` in
@@ -165,6 +169,9 @@ The overlay rules:
   directory first, then in any other `<effect>-effects/` directory. With `param`, loudness follows that
   uniform. The bundled `rain.ogg` and `wind.ogg` are synthesised by
   `tools/make-sounds.py`, so they carry no third-party licence.
+- **Held drawings:** `#pragma fps <param>` says the picture only changes
+  every 1/param s (the shader floors `iTime` itself). The daemon then renders
+  once per step, just after it begins, instead of redrawing the same frame.
 
 ## rain.frag params
 
@@ -226,6 +233,24 @@ Measure your own with `./build/gl-overlay-still -n 120`.
 | `uTint` | 0.03 | cold veil |
 
 About 2.4 ms/frame on the same GPU.
+
+## anime.frag params
+
+| param | default | |
+|---|---|---|
+| `uRain` | 1.0 | how much rain (0 none … 2 downpour) |
+| `uStep` | 12 | drawings per second: 12 = on twos, 8 = on threes, 24 = on ones |
+| `uCycle` | 4 | rain drawings in the loop (0 = every drawing new) |
+| `uWind` | 0.18 | slant of the lines |
+| `uLength` / `uWidth` | 1.0 | line length / pen weight |
+| `uFall` | 1.0 | how far the lines drop between drawings |
+| `uInk` | 0.6 | line strength |
+| `uSplash` / `uSplashSize` | 1.0 | splashes on the ground / their size |
+| `uTint` | 0.08 | flat grey-blue wash |
+
+The file says `#pragma fps uStep`: the daemon renders once per drawing, right
+after it starts, whatever `-f` says (a lower `-f` still wins). So it costs
+about 0.8 ms × 12 a second, close to nothing.
 
 ## Previewing without the overlay
 

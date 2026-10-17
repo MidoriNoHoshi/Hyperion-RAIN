@@ -27,6 +27,7 @@ struct output {
 	bool dirty;             /* needs a redraw even if paused */
 	bool waiting;           /* frame came early under an fps cap */
 	double last_render;
+	double render_time;     /* shader time of the last render (step pacing) */
 };
 
 struct param {
@@ -62,6 +63,7 @@ struct overlay {
 	double time, time_offset, last_frame;
 	int frame;
 	double min_frame_interval; /* 0 = uncapped (monitor refresh) */
+	char step_follow[64];      /* `#pragma fps <param>`: the effect is drawn on steps of 1/param s */
 
 	/* sound (sound.c) */
 	bool sound_on;

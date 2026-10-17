@@ -130,6 +130,19 @@ SNOW = [
     ("uPile", "settling", 0, 2, .05, 0.5, "snow builds up on the bottom edge"),
     ("uTint", "cold veil", 0, .3, .005, 0.03, "pale blue veil"),
 ]
+ANIME = [
+    ("uRain", "rain", 0, 2, .05, 1.0, "how much · 0 none … 2 downpour"),
+    ("uStep", "drawings / s", 1, 24, 1, 12, "12 = on twos · 8 = on threes · 24 = on ones"),
+    ("uCycle", "cycle", 0, 12, 1, 4, "rain drawings in the loop · 0 = all new"),
+    ("uWind", "wind", -.5, .5, .01, 0.18, "slant of the lines"),
+    ("uLength", "line length", .3, 3, .05, 1.0, ""),
+    ("uWidth", "line weight", .3, 4, .05, 1.0, "pen width"),
+    ("uFall", "fall", 0, 3, .05, 1.0, "how far lines drop between drawings"),
+    ("uInk", "ink", 0, 1, .05, 0.6, "line strength"),
+    ("uSplash", "splashes", 0, 2, .05, 1.0, "the same five drawings, over and over"),
+    ("uSplashSize", "splash size", .3, 3, .05, 1.0, ""),
+    ("uTint", "wash", 0, .4, .005, 0.08, "flat grey-blue over everything"),
+]
 OPACITY = ("opacity", "opacity", 0, 1, .05, 1.0, "the whole overlay, any effect")
 VOLUME = ("volume", "volume", 0, 1, .05, 0.6, "follows the weather's strength")
 
@@ -158,6 +171,17 @@ EFFECTS = [
               {"uSnow": .7, "uWind": 0, "uGusts": .1, "uSize": 1.5, "uSpeed": .7}),
              ("blizzard", "heavy, windy, frosted over",
               {"uSnow": 2, "uWind": .4, "uGusts": 1.5, "uFrost": .9, "uVariation": .3, "uPile": 1}),
+         ]),
+    dict(id="anime", kanji="絵", strength="uRain", sound="rain",
+         desc="hand-drawn rain like old anime: held drawings, straight pen lines, the same splash cels reused",
+         groups=[("drawing", "", ANIME)],
+         presets=[
+             ("on twos", "the default: 12 drawings a second, a 4-drawing loop", {}),
+             ("on threes", "8 a second, choppier, older", {"uStep": 8, "uCycle": 3}),
+             ("summer shower", "light, almost straight, no wash",
+              {"uRain": .5, "uWind": .05, "uTint": 0, "uInk": .5}),
+             ("bus stop", "heavy, long lines, big splashes",
+              {"uRain": 1.7, "uLength": 1.6, "uSplashSize": 1.4, "uTint": .14, "uInk": .7}),
          ]),
 ]
 EFFECT = {e["id"]: e for e in EFFECTS}
@@ -961,7 +985,7 @@ class RainPanel(Gtk.Application):
         word, _, rest = line.partition(" ")
         if word in ("help", "?"):
             for h in ("switch <control|presets|hyprland>   (or just the name)",
-                      "effect <rain|snow> · start · stop · theme dark|light · preset <name> · copy · clear",
+                      "effect <rain|snow|anime> · start · stop · theme dark|light · preset <name> · copy · clear",
                       "sound on|off · sound <file> · sound default · volume 0.5",
                       "anything else goes to the daemon, e.g.  set uRain 1.5 · add uRain -0.2 · get · status"):
                 self.log("rain", h, "mid")
