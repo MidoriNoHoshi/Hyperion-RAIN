@@ -15,9 +15,15 @@ click and keypress passes straight through to the windows underneath. Effects:
 - **anime** (`effects/anime-effects/`): rain drawn the way old anime and Ghibli
   films draw it. Straight pen lines from a short loop of drawings, held on
   twos (12 drawings a second), and splashes that replay the same five cels.
+- **sakura** (`effects/sakura-effects/`): cherry petals with independent flutter,
+  3D tumbling, cupped surfaces, fine veins and light passing through thin tissue.
+  Adjustable overlapping petals settle along the bottom edge.
+- **anime-sakura** (`effects/anime-sakura-effects/`): painted cherry petals with
+  plum outlines, cel shadows, paper pigment and animation held on twos, inspired
+  by traditional anime blossom scenes. Includes the same wind, pile and lighting controls.
 
 More are planned (fireflies, aurora, film grain, CRT). Each effect can come
-with a soundtrack (rain and anime → a rain loop, snow → wind), off by default.
+with a soundtrack (rain and anime → a rain loop, snow and both sakura effects → wind), off by default.
 
 It works on any Wayland compositor with layer-shell support (Hyprland, Sway,
 KDE, niri, river, …), but it is developed on Hyprland.
@@ -41,6 +47,8 @@ layer-shell support (for example, Hyprland or Sway):
 nix run .                                  # open the control panel; use Start for the overlay
 nix run .#gl-overlay -- -f 30               # run rain directly
 nix run .#gl-overlay -- -s snow -f 30       # run snow instead
+nix run .#gl-overlay -- -s sakura -f 30     # realistic cherry petals
+nix run .#gl-overlay -- -s anime-sakura    # painted petals, 12 drawings / second
 nix run .#gl-overlay -- -m on --volume 0.5  # rain with sound
 ```
 
@@ -139,6 +147,8 @@ effects/
   rain-effects/   rain.frag  rain.ogg
   snow-effects/   snow.frag  wind.ogg
   anime-effects/  anime.frag  (uses rain.ogg from rain-effects)
+  sakura-effects/ sakura.frag (uses wind.ogg from snow-effects)
+  anime-sakura-effects/ anime-sakura.frag (uses the same wind loop)
 ```
 
 `-s` / `ctl load` take an effect name or a path. A name is looked up as `<name>-effects/<name>.frag` in
@@ -186,13 +196,15 @@ hyperion-rain --run "start; preset storm"
 The control panel is a small GTK4 window for trying the overlay out, styled like
 Hyperion-PAKT. It has four views:
 
-- **effects:** pick the effect (rain, snow; the planned ones are listed, not
+- **effects:** pick rain, snow, anime rain, sakura or anime-sakura (the planned ones are listed, not
   selectable yet). Each effect keeps its own settings.
 - **control:** start or stop the daemon, show/hide, pause, frame rate, and a
   stepper plus slider for every parameter. Changes go to the running overlay
   live.
 - **presets:** per effect. Rain: dream, realistic, drizzle, quiet teal, storm,
-  neon night. Snow: steady, flurries, still night, blizzard.
+  neon night. Snow: steady, flurries, still night, blizzard. Both sakura modes:
+  golden hour, noon, night, sunset wash, orchard breeze, blossom storm and settling.
+  Anime sakura also has on threes and spring film.
 - **hyprland:** a step-by-step guide to adding it to your dotfiles. It detects
   which config Hyprland uses (Lua `hyprland.lua` or classic `hyprland.conf`),
   checks your chosen keys against your live binds, and generates a snippet
@@ -229,6 +241,7 @@ binde = SUPER ALT, bracketleft, exec, gl-overlay ctl add uRain -0.2
 ```
 
 For snow, add `-s snow` to the exec line and nudge `uSnow` instead of `uRain`.
+For petals, use `-s sakura` or `-s anime-sakura` and nudge `uPetals`.
 Running from the repo without installing? Use the full path to
 `build/gl-overlay` and add `-s /path/to/effects/rain-effects/rain.frag`.
 
@@ -342,6 +355,72 @@ The file says `#pragma fps uStep`: the daemon renders once per drawing, right
 after it starts, whatever `-f` says (a lower `-f` still wins). So it costs
 about 0.8 ms × 12 a second, close to nothing.
 
+## Sakura and anime-sakura
+
+Both effects use four depth layers with wind drift, rolling gusts, flutter,
+bobbing and independent 3D roll, pitch and tumble. Their fall speed approximates
+terminal velocity under drag: `uFall × sqrt(uGravity)`. These are procedural
+trajectories, rather than a collision or fluid simulation. Speed zero freezes
+everything; fall speed or gravity zero suspends descent while wind and flutter continue.
+
+The realistic shader shades curved petal surfaces, a small split at the tip,
+pink attachment points, branching veins, subtle tissue texture, soft highlights
+and thin backlit rims. The anime shader uses painted colour bands, plum contours
+and a quieter vein treatment. It holds complete drawings at `uStep` frames per
+second, without regenerating the petals between drawings.
+
+In **control**, both modes have petals, settling and lighting groups; anime-sakura
+also has drawing controls. Settings are remembered separately for each effect.
+Lighting is a named choice (**noon**, **golden hour**, **night**) and changing it
+keeps motion and pile settings. The preset view also includes complete scenes;
+as with other effects, applying a scene preset resets that effect's parameters first.
+
+| parameter | default | purpose |
+|---|---|---|
+| `uPetals` | 1 | density, 0 none … 2 blossom shower |
+| `uWind` / `uGusts` | 0.18 / 0.65 | signed horizontal wind / rolling gusts and eddies |
+| `uFall` / `uGravity` | 1 / 1 | falling speed / gravity multiplier under drag; either at 0 suspends descent |
+| `uFlutter` / `uTumble` | 1 / 1 | sideways slips and bobbing / 3D turning |
+| `uSpeed` / `uSize` | 1 / 1 | scene time scale / petal size |
+| `uDepth` | 0.35 | nearest-petal softness, realistic sakura only |
+| `uPile` | 0.4 | bottom pile amount, 0 none … 2 deep; roughly 3% of screen height at default |
+| `uPileTime` | 0 | buildup duration in scene seconds; 0 shows the configured pile immediately |
+| `uLight` | 1 | 0 noon, 1 golden hour, 2 night |
+| `uLightAngle` | -55 | light direction in degrees: 0 above, 90 right, -90 left |
+| `uLightPower` | 1 | direct light intensity; ambient light remains at 0 |
+| `uTranslucency` / `uVeins` | 0.75 / 0.65 | transmitted light / vein detail |
+| `uScreenTint` | 0 | 0 off, 1 on; enable a desktop wash that follows the lighting |
+| `uTint` | 0.06 | wash strength when screen tint is enabled |
+| `uStep` / `uInk` | 12 / 0.65 | anime-sakura only: drawings per second / outline strength |
+
+Noon gives neutral sunlight, golden hour warms the petals and their transmitted
+light, and night uses cool moonlight and blue ambient shadows. Light direction
+and intensity affect resting petals too. **Screen tint is off by default**:
+turning it off leaves petal lighting active. The tint is a translucent overlay,
+so it approximates a colour wash; it cannot resample or colour-grade desktop pixels.
+
+The pile is a stable arrangement of individual overlapping petals with shaded
+folds and a gently uneven silhouette. `uPile` adjusts its height independently
+of falling density. Buildup uses elapsed scene time, which starts when the daemon
+starts and pauses with it; switching effects does not reset that clock. It is
+not a persistent count of landed petals. Lowering the amount removes excess
+immediately; set it to zero to clear the bottom edge.
+
+```sh
+gl-overlay -s sakura -f 30
+gl-overlay -s anime-sakura -p uStep=8 -p uInk=0.5
+gl-overlay ctl set uLight 2            # moonlight, keep current motion
+gl-overlay ctl set uScreenTint 1       # matching cool blue wash
+gl-overlay ctl set uLight 1            # golden hour; the wash becomes warm
+gl-overlay ctl set uPile 1.2           # a deeper petal bed
+gl-overlay ctl set uPileTime 120       # reach full depth at scene time 120 s
+gl-overlay ctl set uWind -0.3          # drift left
+gl-overlay ctl set uPile 0            # no resting petals
+```
+
+From the Nix flake, use `nix run .#gl-overlay --` in place of `gl-overlay`.
+The bundled wind loop is available with `-m on`, and remains off by default.
+
 ## Previewing without the overlay
 
 `gl-overlay-still` renders a single frame headlessly to a PAM image:
@@ -349,8 +428,26 @@ about 0.8 ms × 12 a second, close to nothing.
 ```sh
 ./build/gl-overlay-still -t 42 -p uDream=0 -o out.pam
 ./build/gl-overlay-still -s snow -t 300 -o out.pam
+./build/gl-overlay-still -s sakura -t 42 -p uLight=1 -p uPile=1 -o out.pam
+./build/gl-overlay-still -s anime-sakura -t 42 -p uLight=2 -o out.pam
 magick wallpaper.png out.pam -composite preview.png
 ```
+
+Check the panel's defaults, parameter ranges and presets against every shader:
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+To also compile and render both sakura effects, exercise all their presets and
+check transparency, lighting, piles, gravity and animation timing:
+
+```sh
+GL_OVERLAY_STILL="$PWD/build/gl-overlay-still" python3 -m unittest discover -s tests -v
+```
+
+These rendering checks need surfaceless EGL/GLES3. Set `LIBGL_ALWAYS_SOFTWARE=1`
+to use Mesa software rendering when a compatible Mesa driver is available.
 
 ## How it works
 

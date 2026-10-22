@@ -30,7 +30,7 @@ static void usage(FILE *f)
 		"       gl-overlay ctl <command> [args]  control a running daemon\n"
 		"\n"
 		"options:\n"
-		"  -s, --shader EFFECT   effect name (rain, snow, …) or a .frag path (default: rain)\n"
+		"  -s, --shader EFFECT   rain, snow, anime, sakura, anime-sakura or a .frag path\n"
 		"  -o, --output NAME     only cover this output (e.g. DP-1)\n"
 		"  -a, --opacity F       global opacity 0..1 (default 1)\n"
 		"  -f, --fps N           frame rate cap, e.g. 1..60 (default: monitor refresh)\n"

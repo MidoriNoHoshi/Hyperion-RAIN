@@ -24,7 +24,7 @@
 
 static const char *help_text =
 	"commands:\n"
-	"  load <effect|path>    switch effect (rain, snow, …) or load a .frag file\n"
+	"  load <effect|path>    rain, snow, anime, sakura, anime-sakura or a .frag file\n"
 	"  effects               list the effects that load can find\n"
 	"  reload                recompile the current shader\n"
 	"  set <name> <float>    set a shader uniform (or 'opacity')\n"

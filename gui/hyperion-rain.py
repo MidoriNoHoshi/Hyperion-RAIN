@@ -143,6 +143,48 @@ ANIME = [
     ("uSplashSize", "splash size", .3, 3, .05, 1.0, ""),
     ("uTint", "wash", 0, .4, .005, 0.08, "flat grey-blue over everything"),
 ]
+PETALS = [
+    ("uPetals", "petals", 0, 2, .05, 1.0, "density · 0 none … 2 blossom shower"),
+    ("uWind", "wind", -1, 1, .01, 0.18, "left / right drift"),
+    ("uGusts", "gusts", 0, 2, .05, 0.65, "rolling gusts and small eddies"),
+    ("uFall", "falling speed", 0, 3, .05, 1.0, "descent only · flutter keeps moving"),
+    ("uGravity", "gravity", 0, 3, .05, 1.0, "drag-limited fall · 0 suspends descent"),
+    ("uFlutter", "flutter", 0, 2, .05, 1.0, "side slips and bobbing on air currents"),
+    ("uTumble", "tumble", 0, 2, .05, 1.0, "turn, roll and show the reverse face"),
+    ("uSpeed", "speed", 0, 3, .05, 1.0, "time scale · 0 freezes the whole scene"),
+    ("uSize", "petal size", .2, 2.5, .05, 1.0, "four layers, far to near"),
+    ("uDepth", "depth of field", 0, 2, .05, 0.35, "soften the nearest petals · realistic only"),
+]
+PETAL_PILE = [
+    ("uPile", "pile amount", 0, 2, .05, 0.4, "individual resting petals · 0 clears the bottom"),
+    ("uPileTime", "buildup seconds", 0, 300, 5, 0.0, "0 = immediate · otherwise grows to pile amount"),
+]
+PETAL_LIGHT = [
+    ("uLight", "lighting", 0, 2, 1, 1.0, "noon / golden hour / night"),
+    ("uLightAngle", "light direction", -180, 180, 5, -55.0, "degrees · 0 above, 90 right, −90 left"),
+    ("uLightPower", "light strength", 0, 2, .05, 1.0, "direct sun or moonlight"),
+    ("uTranslucency", "translucency", 0, 2, .05, 0.75, "light through thin tissue and rims"),
+    ("uVeins", "veins", 0, 2, .05, 0.65, "midrib and fine branching veins"),
+    ("uScreenTint", "screen tint", 0, 1, 1, 0.0, "optional wash follows the lighting"),
+    ("uTint", "tint strength", 0, .3, .005, 0.06, "warm sun / neutral noon / blue night"),
+]
+PETAL_DRAWING = [
+    ("uStep", "drawings / s", 1, 24, 1, 12.0, "12 = on twos · 8 = on threes"),
+    ("uInk", "ink", 0, 1, .05, 0.65, "plum outlines and painted folds"),
+]
+PARAM_CHOICES = {"uLight": ["noon", "golden hour", "night"], "uScreenTint": ["off", "on"]}
+PETAL_PRESETS = [
+    ("golden hour", "warm backlight through tumbling pink petals", {}),
+    ("noon", "soft pink blossoms under a high, clear sun", {"uLight": 0, "uLightAngle": -20}),
+    ("night", "cool moonlit rims, subdued pink shadows", {"uLight": 2, "uLightAngle": 35}),
+    ("sunset wash", "golden light with an optional warm desktop wash",
+     {"uLight": 1, "uScreenTint": 1, "uTint": .09, "uWind": .12}),
+    ("orchard breeze", "a slow, sparse drift with no pile",
+     {"uPetals": .55, "uWind": .08, "uGusts": .35, "uFall": .65, "uPile": 0}),
+    ("blossom storm", "swirling blossoms above a deep bed of petals",
+     {"uPetals": 2, "uWind": .6, "uGusts": 1.5, "uFlutter": 1.4, "uPile": 1.3}),
+    ("settling", "a petal bed builds up over two minutes", {"uPile": 1, "uPileTime": 120, "uFall": .8}),
+]
 OPACITY = ("opacity", "opacity", 0, 1, .05, 1.0, "the whole overlay, any effect")
 VOLUME = ("volume", "volume", 0, 1, .05, 0.6, "follows the weather's strength")
 
@@ -182,6 +224,24 @@ EFFECTS = [
               {"uRain": .5, "uWind": .05, "uTint": 0, "uInk": .5}),
              ("bus stop", "heavy, long lines, big splashes",
               {"uRain": 1.7, "uLength": 1.6, "uSplashSize": 1.4, "uTint": .14, "uInk": .7}),
+         ]),
+    dict(id="sakura", kanji="桜", strength="uPetals", sound="wind",
+         desc="realistic cherry petals: flutter, cupped translucent tissue, fine veins and a resting petal bed",
+         groups=[("petals", "wind, drag and independent flutter", PETALS),
+                 ("settling", "procedural petal bed along the bottom edge", PETAL_PILE),
+                 ("lighting", "light the petals; screen tint is optional", PETAL_LIGHT)],
+         presets=PETAL_PRESETS),
+    dict(id="anime-sakura", kanji="花", strength="uPetals", sound="wind",
+         desc="painted anime blossoms: held cels, plum ink, soft pigment and sunlit folds",
+         groups=[("petals", "wind, drag and independent flutter", [p for p in PETALS if p[0] != "uDepth"]),
+                 ("drawing", "hand-painted cels held on twos", PETAL_DRAWING),
+                 ("settling", "layered painted petals along the bottom edge", PETAL_PILE),
+                 ("lighting", "cel shadows and backlight; screen tint is optional", PETAL_LIGHT)],
+         presets=PETAL_PRESETS + [
+             ("on threes", "eight drawings a second, fine ink, a quiet breeze",
+              {"uStep": 8, "uInk": .5, "uWind": .1, "uPetals": .7}),
+             ("spring film", "pale midday cels, soft outlines and a gentle wash",
+              {"uLight": 0, "uInk": .4, "uScreenTint": 1, "uTint": .035, "uFall": .75}),
          ]),
 ]
 EFFECT = {e["id"]: e for e in EFFECTS}
@@ -394,6 +454,29 @@ class Stepper:
         self.value.set_text(fmt(v, self.step))
         if not self.app.quiet:
             (self.on_change or self.app.set_param)(self.name, v, self.store)
+
+
+class ParamChoice:
+    """Named shader options with the same storage / sync interface as a stepper."""
+
+    def __init__(self, app, spec, store):
+        self.app, self.store = app, store
+        self.name, text, _lo, _hi, _step, default, hint = spec
+        self.options = PARAM_CHOICES[self.name]
+        self.widget = Gtk.Box(spacing=18)
+        name = lbl(text, "mid", width=130)
+        name.set_tooltip_text(f"{self.name} · default {self.options[int(default)]}")
+        self.widget.append(name)
+        self.choice = Choice(app, self.options, 0, self.changed)
+        self.widget.append(self.choice)
+        self.widget.append(lbl(hint, "small", "dim", wrap=True))
+        self.set(store[self.name])
+
+    def set(self, v):
+        self.choice.pick(min(max(round(v), 0), len(self.options) - 1), notify=False)
+
+    def changed(self, i):
+        self.app.set_param(self.name, float(i), self.store)
 
 
 # --------------------------------------------------------------------------------------------------------- app
@@ -701,6 +784,9 @@ class RainPanel(Gtk.Application):
 
     def build_params(self):
         """The current effect's steppers (+ the global opacity); rebuilt when the effect changes."""
+        for control in getattr(self, "param_choices", []):
+            self.refreshers.remove(control.choice.refresh)
+        self.param_choices = []
         while child := self.param_box.get_first_child():
             self.param_box.remove(child)
         self.steppers = {}
@@ -709,7 +795,11 @@ class RainPanel(Gtk.Application):
             s = section(f"{self.effect} · {title}" if i == 0 else title, hint)
             rows = vbox(2)
             for spec in group:
-                st = Stepper(self, spec, self.values[self.effect])
+                if spec[0] in PARAM_CHOICES:
+                    st = ParamChoice(self, spec, self.values[self.effect])
+                    self.param_choices.append(st)
+                else:
+                    st = Stepper(self, spec, self.values[self.effect])
                 self.steppers[spec[0]] = st
                 rows.append(st.widget)
             if i == 0:
@@ -985,7 +1075,7 @@ class RainPanel(Gtk.Application):
         word, _, rest = line.partition(" ")
         if word in ("help", "?"):
             for h in ("switch <control|presets|hyprland>   (or just the name)",
-                      "effect <rain|snow|anime> · start · stop · theme dark|light · preset <name> · copy · clear",
+                      "effect <" + "|".join(EFFECT) + "> · start · stop · theme dark|light · preset <name> · copy · clear",
                       "sound on|off · sound <file> · sound default · volume 0.5",
                       "anything else goes to the daemon, e.g.  set uRain 1.5 · add uRain -0.2 · get · status"):
                 self.log("rain", h, "mid")
