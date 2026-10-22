@@ -5,3 +5,5 @@ handoff.txt
 build/
 .cache/
 *.pam
+result
+result-*

@@ -24,6 +24,96 @@ KDE, niri, river, …), but it is developed on Hyprland.
 
 ## Build & run
 
+### NixOS / Nix flakes
+
+The flake supports `x86_64-linux` and `aarch64-linux`. It packages the overlay,
+GTK4 control panel, desktop launcher, bundled effects and soundtracks, with
+libmpv sound support enabled.
+
+Nix only includes tracked files from Git checkouts. If the flake files were just
+added locally, run `git add flake.nix flake.lock nix/package.nix` first, or use
+`path:.` in place of `.` (for example, `nix run path:.#gl-overlay -- -f 30`).
+
+Run these commands from the repository inside a Wayland session with
+layer-shell support (for example, Hyprland or Sway):
+
+```sh
+nix run .                                  # open the control panel; use Start for the overlay
+nix run .#gl-overlay -- -f 30               # run rain directly
+nix run .#gl-overlay -- -s snow -f 30       # run snow instead
+nix run .#gl-overlay -- -m on --volume 0.5  # rain with sound
+```
+
+The overlay stays in the foreground when started directly. Use another terminal
+to control or stop it:
+
+```sh
+nix run .#gl-overlay -- ctl toggle
+nix run .#gl-overlay -- ctl quit
+```
+
+Nix must have flakes enabled. On NixOS, add this to the system configuration
+and rebuild if it is not already set:
+
+```nix
+nix.settings.experimental-features = [ "nix-command" "flakes" ];
+```
+
+The NixOS graphics stack must also be enabled (`hardware.graphics.enable = true;`,
+normally configured with the compositor). Run the application as the desktop
+user so it can access the Wayland session and audio server.
+
+To build without launching, or install into the user profile:
+
+```sh
+nix build .
+./result/bin/hyperion-rain
+./result/bin/gl-overlay -s anime -f 30
+nix profile add .
+```
+
+After profile installation, `hyperion-rain` and `gl-overlay` are available on
+`PATH`, and the desktop launcher is included. The Hyprland configuration examples
+below then work as written. Launchers may need a new login to discover the entry.
+
+For a declarative installation, add the repository as an input to the system
+flake (replace the path with the checkout's absolute path):
+
+```nix
+inputs.hyperion-rain.url = "path:/path/to/Hyperion-RAIN";
+```
+
+Include `hyperion-rain` in the system flake's `outputs` arguments, then add a
+module to the target `nixosSystem.modules` list:
+
+```nix
+({ pkgs, ... }: {
+  environment.systemPackages = [
+    hyperion-rain.packages.${pkgs.stdenv.hostPlatform.system}.default
+  ];
+})
+```
+
+For Home Manager, use the same package in `home.packages` instead. Rebuild the
+corresponding configuration to install it.
+
+For development, the shell provides the C build dependencies, Python, PyGObject
+and GTK4:
+
+```sh
+nix develop
+meson setup build -Dsound=enabled
+ninja -C build
+./build/gl-overlay -f 30
+python3 gui/hyperion-rain.py
+```
+
+Keep `flake.lock` committed for reproducible dependencies; use `nix flake update`
+to refresh them.
+Installation through Nix does not require `sudo meson install`.
+
+### Meson (other distributions)
+
 ```sh
 meson setup build && ninja -C build
 ./build/gl-overlay                         # rain, all outputs
